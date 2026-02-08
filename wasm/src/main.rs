@@ -26,7 +26,15 @@ async fn main() {
             let direction = (mouse_pos - blob_pos) * dt * 0.075; // Scale it down
             blob.move_blob(direction);
 
-            draw_poly_lines(mouse_pos.x, mouse_pos.y, 3, 18.0, time * 200.0, 20.0, RED);
+            draw_poly_lines(
+                mouse_pos.x,
+                mouse_pos.y,
+                3,
+                18.0,
+                time * 200.0,
+                20.0,
+                RED,
+            );
         }
 
         blob.update(get_frame_time().min(1.0 / 120.0));
