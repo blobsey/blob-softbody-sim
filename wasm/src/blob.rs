@@ -35,7 +35,7 @@ struct Particle {
     pos: Vec2,
     prev_pos: Vec2, // For Verlet integration
     // The particles "home", i.e. distance from the center of mass
-    offset_from_center: Vec2, 
+    offset_from_center: Vec2,
 }
 
 struct Spring {
@@ -136,13 +136,10 @@ impl Blob {
         }
 
         // Create particles pased on the Poisson disc sampling
-        let inner_particle_positions: Vec<Vec2> = grid
-            .iter()
-            .flatten()
-            .filter_map(|&sample| sample)
-            .collect();
+        let inner_particle_positions: Vec<Vec2> =
+            grid.iter().flatten().filter_map(|&sample| sample).collect();
 
-        let num_inner_particles = inner_particle_positions.len();                                   
+        let num_inner_particles = inner_particle_positions.len();
 
         // Find the "center" particle (the one with min distance from origin)
         let mut center_particle_index = 0;
@@ -168,24 +165,23 @@ impl Blob {
             })
             .collect();
 
-        let outline_particle_indices: Vec<usize> = 
-            (num_inner_particles..num_inner_particles + num_outline_particles).collect();
+        let outline_particle_indices: Vec<usize> = (num_inner_particles
+            ..num_inner_particles + num_outline_particles)
+            .collect();
 
-        let all_particle_positions: Vec<Vec2> = 
+        let all_particle_positions: Vec<Vec2> =
             [inner_particle_positions, outline_particle_positions].concat();
 
-        let center_of_mass = all_particle_positions.iter()
-            .sum::<Vec2>()
+        let center_of_mass = all_particle_positions.iter().sum::<Vec2>()
             / all_particle_positions.len() as f32;
 
         // Create all the particles, translating to the origin
-        let particles: Vec<Particle> = all_particle_positions.iter()
-            .map(|&pos| {
-                Particle {
-                    pos: origin + pos,
-                    prev_pos: origin + pos,
-                    offset_from_center: pos - center_of_mass,
-                }
+        let particles: Vec<Particle> = all_particle_positions
+            .iter()
+            .map(|&pos| Particle {
+                pos: origin + pos,
+                prev_pos: origin + pos,
+                offset_from_center: pos - center_of_mass,
             })
             .collect();
 
@@ -268,8 +264,8 @@ impl Blob {
                 // i.e. only damp motion that compresses/stretches the string, not
                 // the particles "sliding" perpendicularly
                 let spring_length_change_rate = relative_velocity.dot(unit_vec);
-                let damping_vec = 
-                    unit_vec * (BLOB_SPRING_DAMPING * spring_length_change_rate);
+                let damping_vec = unit_vec
+                    * (BLOB_SPRING_DAMPING * spring_length_change_rate);
 
                 forces[spring.particle_a] -= force_vec - damping_vec;
                 forces[spring.particle_b] += force_vec - damping_vec;
@@ -278,7 +274,9 @@ impl Blob {
 
         // Move each particle back towards its original position relative to
         // the "center", where center is all the particle positions averaged
-        let center = self.particles.iter()
+        let center = self
+            .particles
+            .iter()
             .fold(Vec2::ZERO, |acc, particle| acc + particle.pos)
             / self.particles.len() as f32;
 
@@ -287,7 +285,7 @@ impl Blob {
             let displacement = target - particle.pos;
             forces[i] += displacement * BLOB_SHAPE_STIFFNESS;
         }
-            
+
         // Gravity
         let particle_mass = BLOB_MASS / self.particles.len() as f32;
 
