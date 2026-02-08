@@ -38,7 +38,7 @@ The `BucketDeployment` in `cdk/lib/website-stack.ts` takes files from `website/`
   ├── cdk/
   ├── wasm/
   ├── website/
-  ├── build.sh
+  ├── Makefile
     ...
   └── .env
 ```
@@ -51,14 +51,14 @@ DOMAIN_NAME="your-website.com"
 
 2. Build and deploy!
 ```bash
-./build.sh --deploy
+make deploy
 ```
 
 ## Notes
 
 If you wanna spin up the site locally:
 ```bash
-./build.sh --watch
+make watch
 ```
 
 Then go to http://localhost:8000
