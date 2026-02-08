@@ -1,17 +1,18 @@
 // Blob constants
-const BLOB_STIFFNESS: f32 = 180.0;
+const BLOB_SPRING_STIFFNESS: f32 = 32.0;
+const BLOB_SHAPE_STIFFNESS: f32 = 160.0;
 const BLOB_BOUNCINESS: f32 = 0.1; // Sane values are 0.0 - 1.0
 const BLOB_RADIUS: f32 = 160.0;
 const BLOB_PARTICLE_RADIUS: f32 = 16.0;
 const BLOB_MASS: f32 = 32.0;
 const BLOB_OUTLINE_THICKNESS: f32 = 20.0;
 const GRAVITY: f32 = 1600.0;
-const BLOB_SPRING_DAMPING: f32 = 20.01;
+const BLOB_SPRING_DAMPING: f32 = BLOB_SPRING_STIFFNESS / 1.5;
 const VELOCITY_DAMPING: f32 = 0.99;
 const BLOB_MAX_SPEED: f32 = 200.0;
 const EPSILON: f32 = 0.00000001;
 use macroquad::{
-    color::{BLACK, BLUE, GREEN, RED},
+    color::{BLACK, BLUE, GREEN, PINK, RED},
     math::Vec2,
     rand,
     shapes::{draw_circle, draw_line},
@@ -26,14 +27,15 @@ const DEBUG: bool = false;
 pub struct Blob {
     particles: Vec<Particle>,
     springs: Vec<Spring>,
-    outline_particles_indices: Vec<usize>,
+    outline_particles_indices: Vec<usize>, // For drawing the outline
     center_particle_index: usize, // Nice to have as a quick center-of-mass
 }
 
 struct Particle {
     pos: Vec2,
     prev_pos: Vec2, // For Verlet integration
-    offset_from_center: Vec2, // Used for keeping blob from "collapsing"
+    // The particles "home", i.e. distance from the center of mass
+    offset_from_center: Vec2, 
 }
 
 struct Spring {
@@ -134,23 +136,20 @@ impl Blob {
         }
 
         // Create particles pased on the Poisson disc sampling
-        let mut particles: Vec<Particle> = grid
+        let inner_particle_positions: Vec<Vec2> = grid
             .iter()
             .flatten()
             .filter_map(|&sample| sample)
-            .map(|sample| Particle {
-                pos: sample + origin,
-                prev_pos: sample + origin,
-                // Conveniently, `sample` is already an offset from the origin (center)
-                offset_from_center: sample,
-            })
             .collect();
 
-        let mut center_particle_index = 0;
-        let mut min_distance = (particles[0].pos - origin).length();
+        let num_inner_particles = inner_particle_positions.len();                                   
 
-        for (i, particle) in particles.iter().enumerate().skip(1) {
-            let distance = (particle.pos - origin).length();
+        // Find the "center" particle (the one with min distance from origin)
+        let mut center_particle_index = 0;
+        let mut min_distance = (inner_particle_positions[0] - origin).length();
+
+        for (i, &pos) in inner_particle_positions.iter().enumerate().skip(1) {
+            let distance = pos.length();
             if distance < min_distance {
                 min_distance = distance;
                 center_particle_index = i;
@@ -161,21 +160,34 @@ impl Blob {
         let circumference = 2.0 * PI * BLOB_RADIUS;
         let num_outline_particles =
             (circumference / (BLOB_PARTICLE_RADIUS * 2.0)).round() as usize;
-        let mut outline_particle_indices = Vec::new();
 
-        for i in 0..num_outline_particles {
-            let angle = 2.0 * PI * i as f32 / num_outline_particles as f32;
-            let outline_pos =
-                Vec2::new(BLOB_RADIUS * angle.cos(), BLOB_RADIUS * angle.sin());
+        let outline_particle_positions: Vec<Vec2> = (0..num_outline_particles)
+            .map(|i| {
+                let angle = 2.0 * PI * i as f32 / num_outline_particles as f32;
+                Vec2::new(BLOB_RADIUS * angle.cos(), BLOB_RADIUS * angle.sin())
+            })
+            .collect();
 
-            outline_particle_indices.push(particles.len());
+        let outline_particle_indices: Vec<usize> = 
+            (num_inner_particles..num_inner_particles + num_outline_particles).collect();
 
-            particles.push(Particle {
-                pos: outline_pos + origin,
-                prev_pos: outline_pos + origin,
-                offset_from_center: outline_pos,
-            });
-        }
+        let all_particle_positions: Vec<Vec2> = 
+            [inner_particle_positions, outline_particle_positions].concat();
+
+        let center_of_mass = all_particle_positions.iter()
+            .sum::<Vec2>()
+            / all_particle_positions.len() as f32;
+
+        // Create all the particles, translating to the origin
+        let particles: Vec<Particle> = all_particle_positions.iter()
+            .map(|&pos| {
+                Particle {
+                    pos: origin + pos,
+                    prev_pos: origin + pos,
+                    offset_from_center: pos - center_of_mass,
+                }
+            })
+            .collect();
 
         // Create springs connecting particles to the closest 6 inner particles
         let mut springs: Vec<Spring> = Vec::new();
@@ -242,7 +254,7 @@ impl Blob {
 
                 // Hooke's law, Force = stiffness * displacement
                 let displacement = spring_len - spring.rest_length;
-                let force = BLOB_STIFFNESS * displacement;
+                let force = BLOB_SPRING_STIFFNESS * displacement;
                 let force_vec = unit_vec * force;
 
                 // Damp spring forces according to relative motion
@@ -264,13 +276,26 @@ impl Blob {
             }
         }
 
+        // Move each particle back towards its original position relative to
+        // the "center", where center is all the particle positions averaged
+        let center = self.particles.iter()
+            .fold(Vec2::ZERO, |acc, particle| acc + particle.pos)
+            / self.particles.len() as f32;
+
+        for (i, particle) in self.particles.iter().enumerate() {
+            let target = center + particle.offset_from_center;
+            let displacement = target - particle.pos;
+            forces[i] += displacement * BLOB_SHAPE_STIFFNESS;
+        }
+            
+        // Gravity
         let particle_mass = BLOB_MASS / self.particles.len() as f32;
 
-        // Gravity
         for i in 0..forces.len() {
             forces[i].y += GRAVITY * particle_mass;
         }
 
+        // Apply all forces
         for (i, particle) in self.particles.iter_mut().enumerate() {
             // acceleration = F/m, needed for Verlet integration
             let acceleration = forces[i] / particle_mass;
@@ -279,7 +304,7 @@ impl Blob {
             let next_pos =
                 2.0 * particle.pos - particle.prev_pos + acceleration * dt * dt;
 
-            // Apply velocity damping to reduce oscillations
+            // Apply velocity damping to simulate friction
             let velocity = next_pos - particle.pos;
             let damped_velocity = velocity * VELOCITY_DAMPING;
             let damped_next_pos = particle.pos + damped_velocity;
@@ -436,6 +461,8 @@ impl Blob {
                 for (i, particle) in self.particles.iter().enumerate() {
                     let color = if self.outline_particles_indices.contains(&i) {
                         RED // Outline particles in red
+                    } else if i == self.center_particle_index {
+                        PINK
                     } else {
                         BLUE // Internal particles in blue
                     };
