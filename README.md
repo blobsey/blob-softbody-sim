@@ -1,11 +1,8 @@
 # Welcome
 
-This is the source of my silly personal site. Enjoy. Or don't. I'm not your parent :)
-
+A softbody simulation of a little blob
 
 ## Development
-
-*Why would you want to develop this? It's ***my*** site!!*
 
 
 ### Prerequisites
@@ -17,7 +14,7 @@ This project also uses Rust, so you're gonna need [that too](https://www.rust-la
 
 ### Project layout and wiring
 
-Generally this project has three separate directories: `wasm/`, `website/`, and `cdk/` which interact in various ways. Generally the entrypoint is `wasm/`.
+This project has three main directories: `wasm/`, `website/`, and `cdk/`. Generally the entrypoint is `wasm/`.
 
 #### `wasm/`
 The `wasm/` directory holds all the rust code which gets compiled into WASM. The `build.sh` script uses the [`wasm-pack`](https://drager.github.io/wasm-pack/) utility to compile the rust and spit out the compiled stuff into `website/wasm/`.
@@ -33,7 +30,6 @@ The `cdk/` directory has all of the infrastructure code, which is just
 - An SSL Certificate (makes da site HTTPS)
 
 The `BucketDeployment` in `cdk/lib/website-stack.ts` takes files from `website/` and then plops them into the s3 bucket as-is. Dead simple. The BucketDeployment handles most of the complicated deployment stuff like CloudFront cache invalidation.
-
 
 ### How to build the project
 
