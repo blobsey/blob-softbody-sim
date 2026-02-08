@@ -1,5 +1,5 @@
 // Blob constants
-const BLOB_SPRING_STIFFNESS: f32 = 32.0;
+const BLOB_SPRING_STIFFNESS: f32 = 40.0;
 const BLOB_SHAPE_STIFFNESS: f32 = 160.0;
 const BLOB_BOUNCINESS: f32 = 0.1; // Sane values are 0.0 - 1.0
 const BLOB_RADIUS: f32 = 160.0;
