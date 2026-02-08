@@ -6,9 +6,10 @@ BLUE	:= '\033[0;34m'
 BOLD	:= '\033[1m'
 NC		:= '\033[0m' # No Color
 
-WASM_DIR	:= wasm
+WASM_DIR	:= $(CURDIR)/wasm
 WASM_TARGET	:= $(WASM_DIR)/target/wasm32-unknown-unknown
-WASM_OUT	:= website/wasm
+WASM_OUT	:= $(CURDIR)/website/wasm
+CDK_DIR		:= $(CURDIR)/cdk
 
 PACKAGE_NAME	:= $(shell cd $(WASM_DIR) && cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
 WASM_FILE	:= $(PACKAGE_NAME).wasm
@@ -25,7 +26,7 @@ help:
 	@echo -e "    $(GREEN)make deploy$(NC)   Build everything (release) and deploy"
 	@echo ""
 
-build: cdk/node_modules # Build rust and synth CDK
+build: $(CDK_DIR)/node_modules # Build rust and synth CDK
 	@echo -e "$(YELLOW)Building WASM...$(NC)"
 	cd $(WASM_DIR) && cargo fmt
 	cd $(WASM_DIR) && cargo build --target wasm32-unknown-unknown
@@ -34,10 +35,10 @@ build: cdk/node_modules # Build rust and synth CDK
 	@echo -e "$(GREEN)Built WASM successfully, and copied $(WASM_FILE)"
 	@echo -e "to $(BLUE)$(WASM_OUT)$(NC)\n"
 	@echo -e "$(YELLOW)Building CDK...$(NC)"
-	cd cdk && bunx cdk synth
+	cd $(CDK_DIR) && bunx cdk synth
 	@echo -e "$(GREEN)Built CDK successfully!$(NC)\n"
 
-deploy: cdk/node_modules # Build everything (release) and deploy
+deploy: $(CDK_DIR)/node_modules # Build everything (release) and deploy
 	@echo -e "$(YELLOW)Building WASM (release)...$(NC)"
 	cd $(WASM_DIR) && cargo fmt
 	cd $(WASM_DIR) && cargo build --target wasm32-unknown-unknown --release
@@ -46,11 +47,11 @@ deploy: cdk/node_modules # Build everything (release) and deploy
 	@echo -e "$(GREEN)Built WASM successfully, and copied $(WASM_FILE)"
 	@echo -e "to $(BLUE)$(WASM_OUT)$(NC)\n"
 	@echo -e "$(YELLOW)Deploying...$(NC)"
-	cd cdk && bunx cdk deploy --all
+	cd $(CDK_DIR) && bunx cdk deploy --all
 	@echo -e "$(GREEN)Deployed successfully!$(NC)\n"
 
-cdk/node_modules: cdk/package.json
-	cd cdk && bun install
+$(CDK_DIR)/node_modules: $(CDK_DIR)/package.json
+	cd $(CDK_DIR) && bun install
 
 CARGO_WATCH := $(WASM_DIR)/.tools/bin/cargo-watch
 
@@ -68,6 +69,7 @@ watch: $(CARGO_WATCH) # Start a hot-reloading session
 	@echo -e "$(GREEN)Built WASM successfully, and copied $(WASM_FILE)"
 	@echo -e "to $(BLUE)$(WASM_OUT)$(NC)\n"
 	@echo -e "$(YELLOW)Starting watch mode...$(NC)"
-	bunx serve --no-clipboard -p 8000 -L website &
-	cd $(WASM_DIR) && $(CARGO_WATCH) -x "build --target wasm32-unknown-unknown" \
+	bunx serve --no-clipboard -p 8000 -L $(CURDIR)/website &
+	cd $(WASM_DIR) && .tools/bin/cargo-watch \
+		-x "build --target wasm32-unknown-unknown" \
 		-s "cp $(WASM_TARGET)/debug/$(WASM_FILE) $(WASM_OUT)/"

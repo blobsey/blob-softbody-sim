@@ -14,4 +14,3 @@ wasm/.tools/
 
 # Static files
 website/wasm/
-website/mq_js_bundle.js
