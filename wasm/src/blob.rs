@@ -7,7 +7,7 @@ const BLOB_MASS: f32 = 32.0;
 const BLOB_OUTLINE_THICKNESS: f32 = 20.0;
 const GRAVITY: f32 = 1600.0;
 const VELOCITY_DAMPING: f32 = 0.99;
-const BLOB_MAX_SPEED: f32 = 48.0;
+const BLOB_MAX_SPEED: f32 = 200.0;
 const EPSILON: f32 = 0.00000001;
 use macroquad::{
     color::{BLACK, BLUE, GREEN, RED},
@@ -20,8 +20,8 @@ use std::f32::consts::{PI, SQRT_2};
 
 const DEBUG: bool = false;
 
-/* The blob is made up of several particles, each connected to their neighbors
-by springs */
+// Blob uses a spring system for soft-body physics
+// https://en.wikipedia.org/wiki/Spring_system
 pub struct Blob {
     particles: Vec<Particle>,
     springs: Vec<Spring>,
@@ -32,6 +32,7 @@ pub struct Blob {
 struct Particle {
     pos: Vec2,
     prev_pos: Vec2, // For Verlet integration
+    offset_from_center: Vec2, // Used for keeping blob from "collapsing"
 }
 
 struct Spring {
@@ -137,8 +138,10 @@ impl Blob {
             .flatten()
             .filter_map(|&sample| sample)
             .map(|sample| Particle {
-                pos: sample + origin, // Translate to origin
+                pos: sample + origin,
                 prev_pos: sample + origin,
+                // Conveniently, `sample` is already an offset from the origin (center)
+                offset_from_center: sample,
             })
             .collect();
 
@@ -169,6 +172,7 @@ impl Blob {
             particles.push(Particle {
                 pos: outline_pos + origin,
                 prev_pos: outline_pos + origin,
+                offset_from_center: outline_pos,
             });
         }
 
@@ -244,11 +248,6 @@ impl Blob {
             }
         }
 
-        // Damp the spring forces
-        for i in 0..forces.len() {
-            forces[i] *= 0.45;
-        }
-
         let particle_mass = BLOB_MASS / self.particles.len() as f32;
 
         // Gravity
@@ -284,27 +283,26 @@ impl Blob {
                 particle.prev_pos = particle.pos - limited_velocity;
             }
 
-            /* Boundaries checks. If we hit a wall, "fake" the prev_pos such that
-            it is reflected beyond the boundary. This is done through some tricky
-            math, i.e. starting with the base velocity formulas where x is the
-            distance in one direction:
-                velocity = (x - xₙ₋₁) / dt
-            now we want to find the fake previous pos which would be from the
-            fake "reflected" velocity, i.e. we wanna find x'ₙ₋₁
-                reflected_velocity = (x' - x'ₙ₋₁) / dt
-            the new position would be the boundary since this is a bounce:
-                reflected_velocity = (boundary - x'ₙ₋₁) / dt
-            so solving for prev_pos:
-                x'ₙ₋₁ = boundary - reflected_velocity * dt
-            since reflected_velocity is really just -velocity, rewrite as:
-                x'ₙ₋₁ = boundary + velocity * dt
-            plug the other side of the original velocity equation:
-                x'ₙ₋₁ = boundary + ((x - xₙ₋₁) / dt) * dt
-            simplify...
-                x'ₙ₋₁ = boundary + (x - xₙ₋₁)
-            finally apply some damping to the velocity:
-                x'ₙ₋₁ = boundary + (x - xₙ₋₁) * bounciness
-            */
+            // Boundaries checks. If we hit a wall, "fake" the prev_pos such that
+            // it is reflected beyond the boundary. This is done through some tricky
+            // math, i.e. starting with the base velocity formulas where x is the
+            // distance in one direction:
+            //     velocity = (x - xₙ₋₁) / dt
+            // now we want to find the fake previous pos which would be from the
+            // fake "reflected" velocity, i.e. we wanna find x'ₙ₋₁
+            //     reflected_velocity = (x' - x'ₙ₋₁) / dt
+            // the new position would be the boundary since this is a bounce:
+            //     reflected_velocity = (boundary - x'ₙ₋₁) / dt
+            // so solving for prev_pos:
+            //     x'ₙ₋₁ = boundary - reflected_velocity * dt
+            // since reflected_velocity is really just -velocity, rewrite as:
+            //     x'ₙ₋₁ = boundary + velocity * dt
+            // plug the other side of the original velocity equation:
+            //     x'ₙ₋₁ = boundary + ((x - xₙ₋₁) / dt) * dt
+            // simplify...
+            //     x'ₙ₋₁ = boundary + (x - xₙ₋₁)
+            // finally apply some damping to the velocity:
+            //     x'ₙ₋₁ = boundary + (x - xₙ₋₁) * bounciness
             let screen_width = screen_width();
             let screen_height = screen_height();
             if particle.pos.x < 0.0 {
@@ -355,8 +353,8 @@ impl Blob {
     }
 
     pub fn move_blob(&mut self, force_vec: Vec2) {
-        /* Since we're using Verlet integration to apply force we
-        "fake" it by moving the prev_pos to be further away */
+        // Since we're using Verlet integration to apply force we
+        // "fake" it by moving the prev_pos to be further away
         for particle in &mut self.particles {
             particle.prev_pos -= force_vec;
         }
