@@ -6,6 +6,7 @@ const BLOB_PARTICLE_RADIUS: f32 = 16.0;
 const BLOB_MASS: f32 = 32.0;
 const BLOB_OUTLINE_THICKNESS: f32 = 20.0;
 const GRAVITY: f32 = 1600.0;
+const BLOB_SPRING_DAMPING: f32 = 20.01;
 const VELOCITY_DAMPING: f32 = 0.99;
 const BLOB_MAX_SPEED: f32 = 200.0;
 const EPSILON: f32 = 0.00000001;
@@ -231,20 +232,35 @@ impl Blob {
 
         // Spring forces
         for spring in &self.springs {
-            let first_particle = &self.particles[spring.particle_a];
-            let second_particle = &self.particles[spring.particle_b];
+            let particle_a = &self.particles[spring.particle_a];
+            let particle_b = &self.particles[spring.particle_b];
 
-            let spring_vec = first_particle.pos - second_particle.pos;
+            let spring_vec = particle_a.pos - particle_b.pos;
             let spring_len = spring_vec.length();
             if spring_len > 0.0 {
                 let unit_vec = spring_vec / spring_len;
-                let displacement = spring_len - spring.rest_length;
+
                 // Hooke's law, Force = stiffness * displacement
+                let displacement = spring_len - spring.rest_length;
                 let force = BLOB_STIFFNESS * displacement;
                 let force_vec = unit_vec * force;
 
-                forces[spring.particle_a] -= force_vec;
-                forces[spring.particle_b] += force_vec;
+                // Damp spring forces according to relative motion
+                // i.e. if the particles are moving far apart or closer together
+                // applies damping but doesn't damp if the whole blob moving
+                let velocity_a = particle_a.pos - particle_a.prev_pos;
+                let velocity_b = particle_b.pos - particle_b.prev_pos;
+                let relative_velocity = velocity_b - velocity_a;
+
+                // Project the velocity onto the spring axis via the dot product
+                // i.e. only damp motion that compresses/stretches the string, not
+                // the particles "sliding" perpendicularly
+                let spring_length_change_rate = relative_velocity.dot(unit_vec);
+                let damping_vec = 
+                    unit_vec * (BLOB_SPRING_DAMPING * spring_length_change_rate);
+
+                forces[spring.particle_a] -= force_vec - damping_vec;
+                forces[spring.particle_b] += force_vec - damping_vec;
             }
         }
 
