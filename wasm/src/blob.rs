@@ -1,12 +1,12 @@
 // Blob constants
-const BLOB_SPRING_STIFFNESS: f32 = 40.0;
-const BLOB_SHAPE_STIFFNESS: f32 = 96.0;
+const BLOB_SPRING_STIFFNESS: f32 = 80.0;
+const BLOB_SHAPE_STIFFNESS: f32 = 256.0;
 const BLOB_BOUNCINESS: f32 = 0.1; // Sane values are 0.0 - 1.0
 const BLOB_RADIUS: f32 = 100.0;
-const BLOB_PARTICLE_RADIUS: f32 = 16.0;
+const BLOB_PARTICLE_RADIUS: f32 = 32.0;
 const BLOB_MASS: f32 = 32.0;
 const BLOB_OUTLINE_THICKNESS: f32 = 24.0;
-const GRAVITY: f32 = 1600.0;
+const GRAVITY: f32 = 2400.0;
 const BLOB_SPRING_DAMPING: f32 = BLOB_SPRING_STIFFNESS / 1.5;
 const VELOCITY_DAMPING: f32 = 0.99;
 const BLOB_MAX_SPEED: f32 = 100.0;
@@ -20,7 +20,7 @@ use macroquad::{
 };
 use std::f32::consts::{PI, SQRT_2};
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 
 // Blob uses a spring system for soft-body physics
 // https://en.wikipedia.org/wiki/Spring_system

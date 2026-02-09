@@ -23,7 +23,7 @@ async fn main() {
         if is_mouse_button_down(MouseButton::Left) {
             let mouse_pos = Vec2::from(mouse_position());
             let blob_pos = blob.get_center_pos();
-            let direction = (mouse_pos - blob_pos) * dt * 0.075; // Scale it down
+            let direction = (mouse_pos - blob_pos) * dt * 0.20; // Scale it down
             blob.move_blob(direction);
 
             draw_poly_lines(
