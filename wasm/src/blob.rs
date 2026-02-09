@@ -1,17 +1,18 @@
 // Blob constants
-const BLOB_SPRING_STIFFNESS: f32 = 240.0;
-const BLOB_SHAPE_STIFFNESS: f32 = 240.0;
+const BLOB_SPRING_STIFFNESS: f32 = 960.0;
+const BLOB_SHAPE_STIFFNESS: f32 = 480.0;
 const BLOB_BOUNCINESS: f32 = 0.1; // Sane values are 0.0 - 1.0
 const BLOB_RADIUS: f32 = 100.0;
 const BLOB_PARTICLE_RADIUS: f32 = 12.0;
 const BLOB_MASS: f32 = 32.0;
 const BLOB_OUTLINE_THICKNESS: f32 = 24.0;
+const BLOB_SMOOTHING_PASSES: usize = 1;
 const GRAVITY: f32 = 2400.0;
 const BLOB_SPRING_DAMPING: f32 = BLOB_SPRING_STIFFNESS / 1.5;
 const VELOCITY_DAMPING: f32 = 0.99;
 const BLOB_MAX_SPEED: f32 = 100.0;
 use macroquad::{
-    color::{BLACK, BLUE, GREEN, PINK, RED},
+    color::{BLACK, BLUE, GREEN, RED},
     math::Vec2,
     shapes::{draw_circle, draw_line},
     window::{screen_height, screen_width},
@@ -45,9 +46,9 @@ struct Spring {
 impl Blob {
     pub fn new(origin: Vec2) -> Blob {
         // Space between particles is 2 * radius, plus a little buffer
-        let particle_spacing = BLOB_PARTICLE_RADIUS * 4.0; 
-        let num_outline = (2.0 * PI * BLOB_RADIUS / particle_spacing)
-            .floor() as usize;
+        let particle_spacing = BLOB_PARTICLE_RADIUS * 4.0;
+        let num_outline =
+            (2.0 * PI * BLOB_RADIUS / particle_spacing).floor() as usize;
 
         let mut positions: Vec<Vec2> = Vec::new();
 
@@ -273,46 +274,44 @@ impl Blob {
     }
 
     pub fn draw(&self) {
-        for i in 0..self.outline_particles_indices.len() {
-            let prev = (i + self.outline_particles_indices.len() - 1)
-                % self.outline_particles_indices.len();
-            let curr = i;
-            let next = (i + 1) % self.outline_particles_indices.len();
+        // Chaikin subdivision
+        let mut points: Vec<Vec2> = self
+            .outline_particles_indices
+            .iter()
+            .map(|&i| self.particles[i].pos)
+            .collect();
 
-            let pos_prev =
-                self.particles[self.outline_particles_indices[prev]].pos;
-            let pos_curr =
-                self.particles[self.outline_particles_indices[curr]].pos;
-            let pos_next =
-                self.particles[self.outline_particles_indices[next]].pos;
+        for _ in 0..BLOB_SMOOTHING_PASSES {
+            let mut new_points: Vec<Vec2> =
+                Vec::with_capacity(points.len() * 2);
+            for i in 0..points.len() {
+                let a = points[i];
+                let b = points[(i + 1) % points.len()];
+                new_points.push(a * 0.75 + b * 0.25);
+                new_points.push(a * 0.25 + b * 0.75);
+            }
+            points = new_points;
+        }
 
-            // Smooth current position by averaging with neighbors
-            let smooth_pos = (pos_prev + pos_curr * 2.0 + pos_next) * 0.25;
+        // Draw the smooth outline
+        for i in 0..points.len() {
+            let curr = points[i];
+            let next = points[(i + 1) % points.len()];
 
-            let next_smooth = (pos_curr
-                + pos_next * 2.0
-                + self.particles[self.outline_particles_indices
-                    [(next + 1) % self.outline_particles_indices.len()]]
-                .pos)
-                * 0.25;
-
-            draw_circle(
-                smooth_pos.x,
-                smooth_pos.y,
-                BLOB_OUTLINE_THICKNESS / 2.0,
-                BLACK,
-            );
+            draw_circle(curr.x, curr.y, BLOB_OUTLINE_THICKNESS / 2.0, BLACK);
 
             draw_line(
-                smooth_pos.x,
-                smooth_pos.y,
-                next_smooth.x,
-                next_smooth.y,
+                curr.x,
+                curr.y,
+                next.x,
+                next.y,
                 BLOB_OUTLINE_THICKNESS,
                 BLACK,
             );
+        }
 
-            if DEBUG {
+        if DEBUG {
+            for _ in 0..self.outline_particles_indices.len() {
                 // Draw all springs as thin lines
                 for spring in &self.springs {
                     let particle_a_pos = self.particles[spring.particle_a].pos;
@@ -332,8 +331,6 @@ impl Blob {
                 for (i, particle) in self.particles.iter().enumerate() {
                     let color = if self.outline_particles_indices.contains(&i) {
                         RED // Outline particles in red
-                    } else if i == self.center_particle_index {
-                        PINK
                     } else {
                         BLUE // Internal particles in blue
                     };
