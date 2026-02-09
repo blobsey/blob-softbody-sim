@@ -1,26 +1,24 @@
 // Blob constants
-const BLOB_SPRING_STIFFNESS: f32 = 80.0;
-const BLOB_SHAPE_STIFFNESS: f32 = 256.0;
+const BLOB_SPRING_STIFFNESS: f32 = 240.0;
+const BLOB_SHAPE_STIFFNESS: f32 = 240.0;
 const BLOB_BOUNCINESS: f32 = 0.1; // Sane values are 0.0 - 1.0
 const BLOB_RADIUS: f32 = 100.0;
-const BLOB_PARTICLE_RADIUS: f32 = 32.0;
+const BLOB_PARTICLE_RADIUS: f32 = 12.0;
 const BLOB_MASS: f32 = 32.0;
 const BLOB_OUTLINE_THICKNESS: f32 = 24.0;
 const GRAVITY: f32 = 2400.0;
 const BLOB_SPRING_DAMPING: f32 = BLOB_SPRING_STIFFNESS / 1.5;
 const VELOCITY_DAMPING: f32 = 0.99;
 const BLOB_MAX_SPEED: f32 = 100.0;
-const EPSILON: f32 = 0.00000001;
 use macroquad::{
     color::{BLACK, BLUE, GREEN, PINK, RED},
     math::Vec2,
-    rand,
     shapes::{draw_circle, draw_line},
     window::{screen_height, screen_width},
 };
-use std::f32::consts::{PI, SQRT_2};
+use std::f32::consts::PI;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 // Blob uses a spring system for soft-body physics
 // https://en.wikipedia.org/wiki/Spring_system
@@ -46,192 +44,67 @@ struct Spring {
 
 impl Blob {
     pub fn new(origin: Vec2) -> Blob {
-        // Poisson disk sampling to pack particles
-        const SAMPLES: usize = 100;
-        let cell_size = BLOB_PARTICLE_RADIUS * SQRT_2.recip();
-        let grid_width = (BLOB_RADIUS * 2.0 / cell_size).ceil() as usize;
-        let grid_height = grid_width;
+        // Space between particles is 2 * radius, plus a little buffer
+        let particle_spacing = BLOB_PARTICLE_RADIUS * 4.0; 
+        let num_outline = (2.0 * PI * BLOB_RADIUS / particle_spacing)
+            .floor() as usize;
 
-        // For checking if there are samples too close
-        let mut grid: Vec<Vec<Option<Vec2>>> =
-            vec![vec![None; grid_width]; grid_height];
+        let mut positions: Vec<Vec2> = Vec::new();
 
-        // Will hold "active points"
-        let mut active_list: Vec<Vec2> = Vec::new();
+        // Center particle (index 0)
+        positions.push(Vec2::ZERO);
+        let center_particle_index = 0;
 
-        // Pick the first sample in the center and add to the queue
-        let first_sample = Vec2::new(0.0, 0.0);
-        let grid_x = ((first_sample.x + BLOB_RADIUS) / cell_size) as usize;
-        let grid_y = ((first_sample.y + BLOB_RADIUS) / cell_size) as usize;
-        grid[grid_x][grid_y] = Some(first_sample);
-        active_list.push(first_sample);
-
-        while !active_list.is_empty() {
-            let i =
-                (rand::gen_range(0.0, 1.0) * active_list.len() as f32) as usize;
-            let parent = active_list[i];
-
-            // Try to generate k candidates around this parent
-            let mut found = false;
-            for j in 0..SAMPLES {
-                // Generate candidates at random angles, just far enough away
-                let angle = 2.0
-                    * PI
-                    * (rand::gen_range(0.0, 1.0) + j as f32 / SAMPLES as f32);
-                let radius = BLOB_PARTICLE_RADIUS * 2.0 + EPSILON;
-                let x = parent.x + radius * angle.cos();
-                let y = parent.y + radius * angle.sin();
-                let candidate = Vec2 { x: x, y: y };
-                let distance_from_center = candidate.length();
-                if distance_from_center <= BLOB_RADIUS - radius {
-                    // Check if candidate is far enough from existing samples
-                    let candidate_grid_x =
-                        ((candidate.x + BLOB_RADIUS) / cell_size) as usize;
-                    let candidate_grid_y =
-                        ((candidate.y + BLOB_RADIUS) / cell_size) as usize;
-
-                    let mut is_far_enough = true;
-
-                    'outer: for step_x in -2..=2 {
-                        let check_x = candidate_grid_x as i32 + step_x;
-                        if check_x < 0 || check_x >= grid_width as i32 {
-                            // Out of X bounds
-                            continue;
-                        }
-
-                        for step_y in -2..=2 {
-                            let check_y = candidate_grid_y as i32 + step_y;
-                            if check_y < 0 || check_y >= grid_height as i32 {
-                                // Out of Y bounds
-                                continue;
-                            }
-
-                            if let Some(existing_sample) =
-                                grid[check_x as usize][check_y as usize]
-                            {
-                                let distance =
-                                    (candidate - existing_sample).length();
-                                if distance < BLOB_PARTICLE_RADIUS * 2.0 {
-                                    is_far_enough = false;
-                                    break 'outer;
-                                }
-                            }
-                        }
-                    }
-
-                    if is_far_enough {
-                        // Found a valid candidate, add to grid and active_list
-                        grid[candidate_grid_x][candidate_grid_y] =
-                            Some(candidate);
-                        active_list.push(candidate);
-                        found = true;
-                        break; // Break from SAMPLES loop
-                    }
-                }
-            }
-
-            if !found {
-                active_list.swap_remove(i);
-            }
+        // Outline particles (indices 1..=num_outline)
+        for i in 0..num_outline {
+            let angle = 2.0 * PI * i as f32 / num_outline as f32;
+            positions.push(Vec2::new(
+                BLOB_RADIUS * angle.cos(),
+                BLOB_RADIUS * angle.sin(),
+            ));
         }
 
-        // Create particles pased on the Poisson disc sampling
-        let inner_particle_positions: Vec<Vec2> =
-            grid.iter().flatten().filter_map(|&sample| sample).collect();
+        let outline_particle_indices: Vec<usize> = (1..=num_outline).collect();
 
-        let num_inner_particles = inner_particle_positions.len();
-
-        // Find the "center" particle (the one with min distance from origin)
-        let mut center_particle_index = 0;
-        let mut min_distance = (inner_particle_positions[0] - origin).length();
-
-        for (i, &pos) in inner_particle_positions.iter().enumerate().skip(1) {
-            let distance = pos.length();
-            if distance < min_distance {
-                min_distance = distance;
-                center_particle_index = i;
-            }
-        }
-
-        // Add outline particles
-        let circumference = 2.0 * PI * BLOB_RADIUS;
-        let num_outline_particles =
-            (circumference / (BLOB_PARTICLE_RADIUS * 2.0)).round() as usize;
-
-        let outline_particle_positions: Vec<Vec2> = (0..num_outline_particles)
-            .map(|i| {
-                let angle = 2.0 * PI * i as f32 / num_outline_particles as f32;
-                Vec2::new(BLOB_RADIUS * angle.cos(), BLOB_RADIUS * angle.sin())
-            })
-            .collect();
-
-        let outline_particle_indices: Vec<usize> = (num_inner_particles
-            ..num_inner_particles + num_outline_particles)
-            .collect();
-
-        let all_particle_positions: Vec<Vec2> =
-            [inner_particle_positions, outline_particle_positions].concat();
-
-        let center_of_mass = all_particle_positions.iter().sum::<Vec2>()
-            / all_particle_positions.len() as f32;
-
-        // Create all the particles, translating to the origin
-        let particles: Vec<Particle> = all_particle_positions
+        let particles: Vec<Particle> = positions
             .iter()
             .map(|&pos| Particle {
                 pos: origin + pos,
                 prev_pos: origin + pos,
-                offset_from_center: pos - center_of_mass,
+                offset_from_center: pos,
             })
             .collect();
 
-        // Create springs connecting particles to the closest 6 inner particles
         let mut springs: Vec<Spring> = Vec::new();
-        for i in 0..particles.len() {
-            let mut candidates: Vec<Spring> = (0..particles.len())
-                .filter(|&j| j != i && !outline_particle_indices.contains(&j))
-                .map(|j| Spring {
-                    particle_a: i,
-                    particle_b: j,
-                    rest_length: (particles[i].pos - particles[j].pos).length(),
-                })
-                .collect();
 
-            candidates.sort_by(|spring_a, spring_b| {
-                spring_a
-                    .rest_length
-                    .partial_cmp(&spring_b.rest_length)
-                    .unwrap()
+        // Spokes: center -> each outline particle
+        for i in 0..num_outline {
+            let outline_idx = 1 + i;
+            springs.push(Spring {
+                particle_a: center_particle_index,
+                particle_b: outline_idx,
+                rest_length: (particles[0].pos - particles[outline_idx].pos)
+                    .length(),
             });
-
-            let num_connections = if outline_particle_indices.contains(&i) {
-                6
-            } else {
-                8
-            };
-            springs.extend(candidates.into_iter().take(num_connections));
         }
 
-        // Connect outline particles to their neighbors
-        for i in 0..outline_particle_indices.len() {
-            let current_idx = outline_particle_indices[i];
-            let next_idx = outline_particle_indices
-                [(i + 1) % outline_particle_indices.len()];
-
+        // Rim: adjacent outline particles
+        for i in 0..num_outline {
+            let curr = 1 + i;
+            let next = 1 + (i + 1) % num_outline;
             springs.push(Spring {
-                particle_a: current_idx,
-                particle_b: next_idx,
-                rest_length: (particles[current_idx].pos
-                    - particles[next_idx].pos)
+                particle_a: curr,
+                particle_b: next,
+                rest_length: (particles[curr].pos - particles[next].pos)
                     .length(),
             });
         }
 
         Blob {
-            particles: particles,
-            springs: springs,
+            particles,
+            springs,
             outline_particles_indices: outline_particle_indices,
-            center_particle_index: center_particle_index,
+            center_particle_index,
         }
     }
 
